@@ -115,7 +115,7 @@ class ETHChecker(object):
 
                 cursor = self.dbCon.cursor()
                 res = cursor.execute('SELECT tnTxId FROM executed WHERE ethTxId = "' + tx.hex() + '"').fetchall()
-                if len(res) == 0: result =  { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'token': self.config['erc20']['address'], 'id': tx.hex() }
+                if len(res) == 0: result =  { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'id': tx.hex() }
 
         return result
         
