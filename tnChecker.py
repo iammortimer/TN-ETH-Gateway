@@ -7,7 +7,6 @@ import PyCWaves
 import traceback
 import sharedfunc
 from web3 import Web3
-from ethtoken.abi import EIP20_ABI
 
 class TNChecker(object):
     def __init__(self, config):
