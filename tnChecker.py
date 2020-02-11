@@ -72,8 +72,8 @@ class TNChecker(object):
                         tx = {
                             'to': targetAddress,
                             'value': amount,
-                            'gas': 120000,
-                            'gasPrice': self.w3.toWei(10, 'gwei'),
+                            'gas': self.config['erc20']['gas'],
+                            'gasPrice': self.w3.toWei(self.config['erc20']['gasprice'], 'gwei'),
                             'nonce': nonce,
                             'chainId': self.config['erc20']['chainid']
                         }
