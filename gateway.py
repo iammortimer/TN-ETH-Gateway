@@ -15,7 +15,7 @@ security = HTTPBasic()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-with open('config_run.json') as json_file:
+with open('config.json') as json_file:
     config = json.load(json_file)
 
 w3 = Web3(Web3.HTTPProvider(config['erc20']['node']))
