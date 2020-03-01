@@ -15,7 +15,7 @@ class ETHChecker(object):
         self.pwTN = PyCWaves.PyCWaves()
         self.pwTN.setNode(node=self.config['tn']['node'], chain=self.config['tn']['network'], chain_id='L')
         seed = os.getenv(self.config['tn']['seedenvname'], self.config['tn']['gatewaySeed'])
-        #self.tnAddress = self.pwTN.Address(seed=seed)
+        self.tnAddress = self.pwTN.Address(seed=seed)
         self.tnAsset = self.pwTN.Asset(self.config['tn']['assetId'])
 
         cursor = self.dbCon.cursor()
