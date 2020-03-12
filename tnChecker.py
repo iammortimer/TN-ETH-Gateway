@@ -69,11 +69,16 @@ class TNChecker(object):
 
                     try:
                         nonce = self.w3.eth.getTransactionCount(self.config['erc20']['gatewayAddress'])
+                        if self.config['erc20']['gasprice'] > 0:
+                            gasprice = self.w3.toWei(self.config['erc20']['gasprice'], 'gwei')
+                        else:
+                            gasprice = int(self.w3.eth.gasPrice * 1.1)
+
                         tx = {
                             'to': targetAddress,
                             'value': amount,
                             'gas': self.config['erc20']['gas'],
-                            'gasPrice': self.w3.toWei(self.config['erc20']['gasprice'], 'gwei'),
+                            'gasPrice': gasprice,
                             'nonce': nonce,
                             'chainId': self.config['erc20']['chainid']
                         }
