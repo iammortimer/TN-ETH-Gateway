@@ -5,6 +5,7 @@ import PyCWaves
 import traceback
 import sharedfunc
 from web3 import Web3
+from verification import verifier
 
 class ETHChecker(object):
     def __init__(self, config):
@@ -17,6 +18,7 @@ class ETHChecker(object):
         seed = os.getenv(self.config['tn']['seedenvname'], self.config['tn']['gatewaySeed'])
         self.tnAddress = self.pwTN.Address(seed=seed)
         self.tnAsset = self.pwTN.Asset(self.config['tn']['assetId'])
+        self.verifier = verifier(config)
 
         cursor = self.dbCon.cursor()
         self.lastScannedBlock = cursor.execute('SELECT height FROM heights WHERE chain = "ETH"').fetchall()[0][0]
@@ -100,6 +102,8 @@ class ETHChecker(object):
                             
                     except Exception as e:
                         self.faultHandler(txInfo, "txerror", e=e)
+
+                    self.verifier.verifyTN(tx)
 
     def checkTx(self, tx):
         #check the transaction

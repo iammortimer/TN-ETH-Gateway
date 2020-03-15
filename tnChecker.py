@@ -7,6 +7,7 @@ import PyCWaves
 import traceback
 import sharedfunc
 from web3 import Web3
+from verification import verifier
 
 class TNChecker(object):
     def __init__(self, config):
@@ -16,6 +17,7 @@ class TNChecker(object):
         self.node = self.config['tn']['node']
         self.w3 = Web3(Web3.HTTPProvider(self.config['erc20']['node']))
         self.privatekey = os.getenv(self.config['erc20']['seedenvname'], self.config['erc20']['privateKey'])
+        self.verifier = verifier(config)
 
         cursor = self.dbCon.cursor()
         self.lastScannedBlock = cursor.execute('SELECT height FROM heights WHERE chain = "TN"').fetchall()[0][0]
@@ -97,6 +99,8 @@ class TNChecker(object):
                             print('send tokens from tn to other network!')
                     except Exception as e:
                         self.faultHandler(transaction, "txerror", e=e)
+
+                    self.verifier.verifyOther(txId)
 
     def checkTx(self, tx):
         #check the transaction
