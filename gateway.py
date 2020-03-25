@@ -5,6 +5,7 @@ from ethtoken.abi import EIP20_ABI
 import PyCWaves
 import json
 from verification import verifier
+import os
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
