@@ -94,7 +94,7 @@ class ETHChecker(object):
                             amount /= pow(10, self.config['tn']['decimals'])
                             cursor.execute('INSERT INTO executed ("sourceAddress", "targetAddress", "ethTxId", "tnTxId", "amount", "amountFee") VALUES ("' + txInfo['sender'] + '", "' + targetAddress + '", "' + transaction.hex() + '", "' + tx['id'] + '", "' + str(round(amount)) + '", "' + str(self.config['tn']['fee']) + '")')
                             self.dbCon.commit()
-                            print('send tokens from waves to tn!')
+                            print('send tokens to tn!')
 
                             cursor = self.dbCon.cursor()
                             cursor.execute('DELETE FROM tunnel WHERE sourceAddress = "' + txInfo['sender'] + '" and targetAddress = "' + targetAddress + '"')
