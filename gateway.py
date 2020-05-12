@@ -58,9 +58,8 @@ def get_tnBalance():
     return int(round(myBalance))
 
 def get_otherBalance():
-    contract = w3.eth.contract(address=config['erc20']['contract']['address'], abi=EIP20_ABI)
-    balance = contract.functions.balanceOf(config['erc20']['gatewayAddress']).call()
-    balance /= pow(10, config['erc20']['contract']['decimals'])
+    balance = w3.eth.getBalance(config['erc20']['gatewayAddress'])
+    balance /= pow(10, config['erc20']['decimals'])
     return int(round(balance))
 
 
