@@ -18,6 +18,7 @@
         "chainid": <chainid of the ETH chain this is>,
         "decimals": <number of decimals of the token>,
         "gatewayAddress": "<Waves address of the gateway>",
+        "coldwallet": "",
         "privateKey": "<privatekey of the above devined address>",
         "seedenvname" : "<the ENV name to store your private key instead of the field above>",
         "fee": <the total fee you want to collect on the gateway, calculated in the proxy token, e.g., 0.1>,
@@ -26,10 +27,12 @@
         "gas": <the amount of gas used for each transaction on the ETH network>,
         "gasprice" : <the gasprice in gwei or set to 0 for automatic gasprice determination>,
         "timeInBetweenChecks": <seconds in between a check for a new block>,
-        "confirmations": <number of confirmations necessary in order to accept a transaction>
+        "confirmations": <number of confirmations necessary in order to accept a transaction>,
+        "network": "Ethereum"
     },
     "tn": {
         "gatewayAddress": "<TN address of the gateway>",
+        "coldwallet": "",
         "gatewaySeed": "<seed of the above devined address>",
         "seedenvname" : "<the ENV name to store your seed instead of the field above>",
         "fee": <the fee you want to collect on the gateway, calculated in the proxy token, e.g., 0.1>,
