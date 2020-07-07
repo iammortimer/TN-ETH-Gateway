@@ -7,7 +7,6 @@ import PyCWaves
 import traceback
 import sharedfunc
 from web3 import Web3
-from ethtoken.abi import EIP20_ABI
 from verification import verifier
 
 class TNChecker(object):
@@ -67,26 +66,27 @@ class TNChecker(object):
                 else:
                     amount = transaction['amount'] / pow(10, self.config['tn']['decimals'])
                     amount -= self.config['erc20']['fee']
-                    amount *= pow(10, self.config['erc20']['contract']['decimals'])
+                    amount *= pow(10, self.config['erc20']['decimals'])
                     amount = int(round(amount))
 
                     if amount <= 0:
                         self.faultHandler(transaction, "senderror", e='under minimum amount')
                     else:
                         try:
-                            token = self.w3.eth.contract(address=self.config['erc20']['contract']['address'], abi=EIP20_ABI)
                             nonce = self.w3.eth.getTransactionCount(self.config['erc20']['gatewayAddress'])
                             if self.config['erc20']['gasprice'] > 0:
                                 gasprice = self.w3.toWei(self.config['erc20']['gasprice'], 'gwei')
                             else:
                                 gasprice = int(self.w3.eth.gasPrice * 1.1)
 
-                            tx = token.functions.transfer(targetAddress, amount).buildTransaction({
-                                'chainId': 1,
+                            tx = {
+                                'chainId': self.config['erc20']['chainid'],
+                                'to': targetAddress,
+                                'value': amount,
                                 'gas': self.config['erc20']['gas'],
                                 'gasPrice': gasprice,
                                 'nonce': nonce
-                            })
+                            }
                             signed_tx = self.w3.eth.account.signTransaction(tx, private_key=self.privatekey)
                             txId = self.w3.eth.sendRawTransaction(signed_tx.rawTransaction)
 
@@ -96,10 +96,10 @@ class TNChecker(object):
                                 print("send tx: " + str(txId.hex()))
 
                                 cursor = self.dbCon.cursor()
-                                amount /= pow(10, self.config['erc20']['contract']['decimals'])
+                                amount /= pow(10, self.config['erc20']['decimals'])
                                 cursor.execute('INSERT INTO executed ("sourceAddress", "targetAddress", "tnTxId", "ethTxId", "amount", "amountFee") VALUES ("' + transaction['sender'] + '", "' + targetAddress + '", "' + transaction['id'] + '", "' + txId.hex() + '", "' + str(round(amount)) + '", "' + str(self.config['erc20']['fee']) + '")')
                                 self.dbCon.commit()
-                                print('send tokens from tn to erc20!')
+                                print('send tokens from tn to other network!')
                         except Exception as e:
                             self.faultHandler(transaction, "txerror", e=e)
 

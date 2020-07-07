@@ -5,7 +5,6 @@ import PyCWaves
 import traceback
 import sharedfunc
 from web3 import Web3
-from ethtoken.abi import EIP20_ABI
 from verification import verifier
 
 class ETHChecker(object):
@@ -133,26 +132,16 @@ class ETHChecker(object):
         result = None
         transaction = self.w3.eth.getTransaction(tx)
 
-        if transaction['to'] == self.config['erc20']['contract']['address'] and transaction['input'].startswith('0xa9059cbb'):
+        if transaction['to'] == self.config['erc20']['gatewayAddress']:
             transactionreceipt = self.w3.eth.getTransactionReceipt(tx)
             if transactionreceipt['status']:
-                contract = self.w3.eth.contract(address=self.config['erc20']['contract']['address'], abi=EIP20_ABI)
                 sender = transaction['from']
+                recipient = transaction['to']
+                amount = transaction['value'] / 10 ** self.config['erc20']['decimals']
 
-                try:
-                    decodedInput = contract.decode_function_input(transaction['input'])
-                except Exception as e:
-                    print('Something went wrong during ETH block iteration at block ' + str(self.lastScannedBlock))
-                    print(traceback.TracebackException.from_exception(e))
-                    return result
-                
-                recipient = decodedInput[1]['_to']
-                if recipient == self.config['erc20']['gatewayAddress']:
-                    amount = decodedInput[1]['_value'] / 10 ** self.config['erc20']['contract']['decimals']
-
-                    cursor = self.dbCon.cursor()
-                    res = cursor.execute('SELECT tnTxId FROM executed WHERE ethTxId = "' + tx.hex() + '"').fetchall()
-                    if len(res) == 0: result =  { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'token': self.config['erc20']['contract']['address'], 'id': tx.hex() }
+                cursor = self.dbCon.cursor()
+                res = cursor.execute('SELECT tnTxId FROM executed WHERE ethTxId = "' + tx.hex() + '"').fetchall()
+                if len(res) == 0: result =  { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'id': tx.hex() }
 
         return result
         
