@@ -1,83 +1,63 @@
-import os
-import sqlite3 as sqlite
 import time
-import PyCWaves
 import traceback
 import sharedfunc
-from web3 import Web3
+from dbClass import dbCalls
+from tnClass import tnCalls
+from otherClass import otherCalls
+from etherscanClass import etherscanCalls
 from verification import verifier
 
 class ETHChecker(object):
     def __init__(self, config):
         self.config = config
-        self.dbCon = sqlite.connect('gateway.db')
-        self.w3 = self.getWeb3Instance()
-
-        self.pwTN = PyCWaves.PyCWaves()
-        self.pwTN.setNode(node=self.config['tn']['node'], chain=self.config['tn']['network'], chain_id='L')
-        seed = os.getenv(self.config['tn']['seedenvname'], self.config['tn']['gatewaySeed'])
-        self.tnAddress = self.pwTN.Address(seed=seed)
-        self.tnAsset = self.pwTN.Asset(self.config['tn']['assetId'])
+        self.db = dbCalls(config)
+        self.tnc = tnCalls(config)
         self.verifier = verifier(config)
 
-        cursor = self.dbCon.cursor()
-        self.lastScannedBlock = cursor.execute('SELECT height FROM heights WHERE chain = "ETH"').fetchall()[0][0]
-
-    def getWeb3Instance(self):
-        instance = None
-
-        if self.config['erc20']['node'].startswith('http'):
-            instance = Web3(Web3.HTTPProvider(self.config['erc20']['node']))
+        if self.config['eth']['etherscan-on']:
+            self.otc = etherscanCalls(config)
         else:
-            instance = Web3()
+            self.otc = otherCalls(config)
 
-        return instance
-
-    def getCurrentBlock(self):
-        latestBlock = self.w3.eth.blockNumber
-
-        return latestBlock
+        self.lastScannedBlock = self.db.lastScannedBlock("ETH")
 
     def run(self):
         #main routine to run continuesly
-        print('started checking ETH blocks at: ' + str(self.lastScannedBlock))
+        #print('INFO: started checking ETH blocks at: ' + str(self.lastScannedBlock))
 
-        self.dbCon = sqlite.connect('gateway.db')
         while True:
             try:
-                nextblock = self.getCurrentBlock() - self.config['erc20']['confirmations']
+                nextblock = self.otc.currentBlock() - self.config['eth']['confirmations']
 
                 if nextblock > self.lastScannedBlock:
-                    self.lastScannedBlock += 1
-                    self.checkBlock(self.lastScannedBlock)
-                    cursor = self.dbCon.cursor()
-                    cursor.execute('UPDATE heights SET "height" = ' + str(self.lastScannedBlock) + ' WHERE "chain" = "ETH"')
-                    self.dbCon.commit()
+                    if self.config['eth']['etherscan-on']:
+                        self.checkBlock(self.lastScannedBlock)
+                        self.db.updHeights(nextblock, "ETH")
+                        self.lastScannedBlock = self.db.lastScannedBlock("ETH")
+                    else:
+                        self.lastScannedBlock += 1
+                        self.checkBlock(self.lastScannedBlock)
+                        self.db.updHeights(self.lastScannedBlock, "ETH")
             except Exception as e:
                 self.lastScannedBlock -= 1
-                print('Something went wrong during ETH block iteration: ')
-                print(traceback.TracebackException.from_exception(e))
+                print('ERROR: Something went wrong during ETH block iteration: ' + str(traceback.TracebackException.from_exception(e)))
 
-            time.sleep(self.config['erc20']['timeInBetweenChecks'])
+            time.sleep(self.config['eth']['timeInBetweenChecks'])
 
     def checkBlock(self, heightToCheck):
-        cursor = self.dbCon.cursor()
-        amount_tunnels = cursor.execute('SELECT * FROM tunnel').fetchall()
-
-        if len(amount_tunnels) != 0:
+        if self.db.doWeHaveTunnels:
             #check content of the block for valid transactions
-            block = self.w3.eth.getBlock(heightToCheck)
+            block = self.otc.getBlock(heightToCheck)
             for transaction in block['transactions']:
-                txInfo = self.checkTx(transaction)
+                txInfo = self.otc.checkTx(transaction)
 
                 if txInfo is not None:
                     txContinue = False
-                    cursor = self.dbCon.cursor()
                     sourceAddress = txInfo['sender']
-                    res = cursor.execute('SELECT targetAddress FROM tunnel WHERE sourceAddress ="' + sourceAddress + '"').fetchall()
+                    res = self.db.getTargetAddress(sourceAddress)
                     if len(res) == 0:
                         sourceAddress = str(txInfo['amount'])[-6:]
-                        res = cursor.execute('SELECT targetAddress FROM tunnel WHERE sourceAddress ="' + sourceAddress + '"').fetchall()
+                        res = self.db.getTargetAddress(sourceAddress)
 
                         if len(res) == 0:
                             self.faultHandler(txInfo, 'notunnel')
@@ -87,63 +67,46 @@ class ETHChecker(object):
                         txContinue = True
 
                     if txContinue:
-                        targetAddress = res[0][0]
+                        targetAddress = res
                         amount = txInfo['amount']
                         amount -= self.config['tn']['fee']
                         amount *= pow(10, self.config['tn']['decimals'])
                         amount = int(round(amount))
 
-                        if amount <= 0:
+                        amountCheck = amount / pow(10, self.config['tn']['decimals'])
+                        if amountCheck < self.config['main']['min'] or amountCheck > self.config['main']['max']:
                             txInfo['recipient'] = targetAddress
-                            self.faultHandler(txInfo, "senderror", e='under minimum amount')
-                            cursor = self.dbCon.cursor()
-                            cursor.execute('DELETE FROM tunnel WHERE sourceAddress = "' + sourceAddress + '" and targetAddress = "' + targetAddress + '"')
-                            self.dbCon.commit()
+                            self.faultHandler(txInfo, "senderror", e='outside amount ranges')
+                            #self.db.delTunnel(sourceAddress, targetAddress)
+                            self.db.updTunnel("error", sourceAddress, targetAddress, statusOld='created')
                         else:
                             try:
-                                addr = self.pwTN.Address(targetAddress)
-                                if self.config['tn']['assetId'] == 'TN':
-                                    tx = self.tnAddress.sendWaves(addr, amount, 'Thanks for using our service!', txFee=2000000)
-                                else:
-                                    tx = self.tnAddress.sendAsset(addr, self.tnAsset, amount, 'Thanks for using our service!', txFee=2000000)
+                                self.db.updTunnel("sending", sourceAddress, targetAddress, statusOld='created')
+                                tx = self.tnc.sendTx(targetAddress, amount, 'Thanks for using our service!')
 
                                 if 'error' in tx:
                                     self.faultHandler(txInfo, "senderror", e=tx['message'])
                                 else:
-                                    print("send tx: " + str(tx))
+                                    print("INFO: send tx: " + str(tx))
 
-                                    cursor = self.dbCon.cursor()
-                                    amount /= pow(10, self.config['tn']['decimals'])
-                                    cursor.execute('INSERT INTO executed ("sourceAddress", "targetAddress", "ethTxId", "tnTxId", "amount", "amountFee") VALUES ("' + txInfo['sender'] + '", "' + targetAddress + '", "' + transaction.hex() + '", "' + tx['id'] + '", "' + str(round(amount)) + '", "' + str(self.config['tn']['fee']) + '")')
-                                    self.dbCon.commit()
-                                    print('send tokens from eth to tn!')
+                                    self.db.insExecuted(txInfo['sender'], targetAddress, txInfo['id'], tx['id'], amountCheck, self.config['tn']['fee'])
+                                    print('INFO: send tokens from eth to tn!')
 
-                                    cursor = self.dbCon.cursor()
-                                    cursor.execute('DELETE FROM tunnel WHERE sourceAddress = "' + txInfo['sender'] + '" and targetAddress = "' + targetAddress + '"')
-                                    self.dbCon.commit()
-                                    
+                                    #self.db.delTunnel(txInfo['sender'], targetAddress)
+                                    self.db.updTunnel("verifying", sourceAddress, targetAddress, statusOld="sending")
                             except Exception as e:
+                                self.db.updTunnel("error", sourceAddress, targetAddress, statusOld="sending")
                                 self.faultHandler(txInfo, "txerror", e=e)
 
-                            self.verifier.verifyTN(tx)
+                            if len(tx) == 0:
+                                #TODO
+                                self.db.insError(sourceAddress, targetAddress, '', txInfo['id'], amountCheck, 'tx failed to send - manual intervention required')
+                                print("ERROR: tx failed to send - manual intervention required")
+                                self.db.updTunnel("error", sourceAddress, targetAddress, statusOld="sending")
+                            else:
+                                self.tnc.verifyTx(tx, sourceAddress, targetAddress)
 
-    def checkTx(self, tx):
-        #check the transaction
-        result = None
-        transaction = self.w3.eth.getTransaction(tx)
-
-        if transaction['to'] == self.config['erc20']['gatewayAddress']:
-            transactionreceipt = self.w3.eth.getTransactionReceipt(tx)
-            if transactionreceipt['status']:
-                sender = transaction['from']
-                recipient = transaction['to']
-                amount = transaction['value'] / 10 ** self.config['erc20']['decimals']
-
-                cursor = self.dbCon.cursor()
-                res = cursor.execute('SELECT tnTxId FROM executed WHERE ethTxId = "' + tx.hex() + '"').fetchall()
-                if len(res) == 0: result =  { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'id': tx.hex() }
-
-        return result
+                            
         
     def faultHandler(self, tx, error, e=""):
         #handle transfers to the gateway that have problems
@@ -151,21 +114,15 @@ class ETHChecker(object):
         timestampStr = sharedfunc.getnow()
 
         if error == "notunnel":
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "tnTxId", "ethTxId", "amount", "error") VALUES ("' + tx['sender'] + '", "", "", "' + tx['id'] + '", "' + str(amount) + '", "no tunnel found for sender")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: no tunnel found for transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], '', '', tx['id'], amount, 'no tunnel found for sender')
+            print("ERROR: " + timestampStr + " - Error: no tunnel found for transaction from " + tx['sender'] + " - check errors table.")
 
         if error == "txerror":
             targetAddress = tx['recipient']
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "tnTxId", "ethTxId", "amount", "error", "exception") VALUES ("' + tx['sender'] + '", "' + targetAddress + '", "", "' + tx['id'] + '", "' + str(amount) + '", "tx error, possible incorrect address", "' + str(e) + '")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], targetAddress, '', tx['id'], amount, 'tx error, possible incorrect address', str(e))
+            print("ERROR: " + timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
 
         if error == "senderror":
             targetAddress = tx['recipient']
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "tnTxId", "ethTxId", "amount", "error", "exception") VALUES ("' + tx['sender'] + '", "' + targetAddress + '", "", "' + tx['id'] + '", "' + str(amount) + '", "tx error, check exception error", "' + str(e) + '")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], targetAddress, '', tx['id'], amount, 'tx error, check exception error', str(e))
+            print("ERROR: " + timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")

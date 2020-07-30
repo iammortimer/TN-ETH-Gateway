@@ -1,11 +1,14 @@
 import re
-import sqlite3 as sqlite
-from web3 import Web3
-import PyCWaves
 import json
-from verification import verifier
 import datetime
 import os
+from typing import List, Optional
+from pydantic import BaseModel
+
+from verification import verifier
+from dbClass import dbCalls
+from otherClass import otherCalls
+from tnClass import tnCalls
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -16,6 +19,84 @@ from starlette.requests import Request
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.middleware.cors import CORSMiddleware
+
+class cHeights(BaseModel):
+    TN: int
+    Other: int
+
+class cAdresses(BaseModel):
+    sourceAddress: str
+    targetAddress: str
+
+class cExecResult(BaseModel):
+    successful: bool
+
+class cDustkey(BaseModel):
+    successful: bool
+    dustKey: int = None
+
+class cFullInfo(BaseModel):
+    chainName: str
+    assetID: str
+    tn_gateway_fee: float
+    tn_network_fee: float
+    tn_total_fee: float
+    other_gateway_fee: float
+    other_network_fee: float
+    other_total_fee: float
+    fee: float
+    company: str
+    email: str
+    telegram: str
+    recovery_amount: float
+    recovery_fee: float
+    otherHeight: int
+    tnHeight: int
+    tnAddress: str
+    tnColdAddress: str
+    otherAddress: str
+    otherNetwork: str
+    disclaimer: str
+    tn_balance: int
+    other_balance: int
+    minAmount: float
+    maxAmount: float
+    type: str
+    usageinfo: str
+
+class cDepositWD(BaseModel):
+    status: str
+    tx: str
+    block: str
+    error: str
+
+class cTx(BaseModel):
+    sourceAddress: str
+    targetAddress: str
+    tnTxId: str
+    OtherTxId: str
+    TNVerBlock: int = 0
+    OtherVerBlock: int = 0
+    amount: float
+    TypeTX: str
+    Status: str
+
+class cTxs(BaseModel):
+    transactions: List[cTx] = []
+    error: str = ""
+
+class cFees(BaseModel):
+    totalFees: float
+
+class cHealth(BaseModel):
+    status: str
+    connectionTN: bool
+    connectionOther: bool
+    blocksbehindTN: int
+    blockbehindOther: int
+    balanceTN: float
+    balanceOther: float
+    numberErrors: int
 
 app = FastAPI()
 app.add_middleware(
@@ -33,12 +114,16 @@ templates = Jinja2Templates(directory="templates")
 with open('config.json') as json_file:
     config = json.load(json_file)
 
-w3 = Web3(Web3.HTTPProvider(config['erc20']['node']))
+dbc = dbCalls(config)
+tnc = tnCalls(config)
+otc = otherCalls(config)
+checkit = verifier(config)
 
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     correct_username = secrets.compare_digest(credentials.username, config["main"]["admin-username"])
     correct_password = secrets.compare_digest(credentials.password, config["main"]["admin-password"])
     if not (correct_username and correct_password):
+        print("ERROR: invalid logon details")
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -47,19 +132,10 @@ def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials.username
 
 def get_tnBalance():
-    pwTN = PyCWaves.PyCWaves()
-    pwTN.THROW_EXCEPTION_ON_ERROR = True
-    pwTN.setNode(node=config['tn']['node'], chain=config['tn']['network'], chain_id='L')
-    seed = os.getenv(config['tn']['seedenvname'], config['tn']['gatewaySeed'])
-    tnAddress = pwTN.Address(seed=seed)
-    myBalance = tnAddress.balance(assetId=config['tn']['assetId'])
-    myBalance /= pow(10, config['tn']['decimals'])
-    return int(round(myBalance))
+    return tnc.currentBalance()
 
 def get_otherBalance():
-    balance = w3.eth.getBalance(config['erc20']['gatewayAddress'])
-    balance /= pow(10, config['erc20']['decimals'])
-    return int(round(balance))
+    return otc.currentBalance()
 
 
 @app.get("/")
@@ -71,26 +147,26 @@ async def index(request: Request):
                                                      "tn_gateway_fee":config['tn']['gateway_fee'],
                                                      "tn_network_fee":config['tn']['network_fee'],
                                                      "tn_total_fee":config['tn']['network_fee']+config['tn']['gateway_fee'],
-                                                     "eth_gateway_fee":config['erc20']['gateway_fee'],
-                                                     "eth_network_fee":config['erc20']['network_fee'],
-                                                     "eth_total_fee":config['erc20']['network_fee'] + config['erc20']['gateway_fee'],
+                                                     "eth_gateway_fee":config['eth']['gateway_fee'],
+                                                     "eth_network_fee":config['eth']['network_fee'],
+                                                     "eth_total_fee":config['eth']['network_fee'] + config['eth']['gateway_fee'],
                                                      "fee": config['tn']['fee'],
                                                      "company": config['main']['company'],
                                                      "email": config['main']['contact-email'],
                                                      "telegram": config['main']['contact-telegram'],
                                                      "recovery_amount":config['main']['recovery_amount'],
                                                      "recovery_fee":config['main']['recovery_fee'],
-                                                     "ethHeight": heights['ETH'],
+                                                     "ethHeight": heights['Other'],
                                                      "tnHeight": heights['TN'],
                                                      "tnAddress": config['tn']['gatewayAddress'],
-                                                     "ethAddress": config['erc20']['gatewayAddress'],
+                                                     "ethAddress": config['eth']['gatewayAddress'],
                                                      "disclaimer": config['main']['disclaimer']})
 
-@app.get('/heights')
+@app.get('/heights', response_model=cHeights)
 async def getHeights():
-    dbCon = sqlite.connect('gateway.db')
-    result = dbCon.cursor().execute('SELECT chain, height FROM heights WHERE chain = "ETH" or chain = "TN"').fetchall()
-    return { result[0][0]: result[0][1], result[1][0]: result[1][1] }
+    result = dbc.getHeights()
+    
+    return {'TN': result[1][1], 'Other': result[0][1]}
 
 @app.get('/errors')
 async def getErrors(request: Request, username: str = Depends(get_current_username)):
@@ -98,126 +174,87 @@ async def getErrors(request: Request, username: str = Depends(get_current_userna
         return {"message": "change the default username and password please!"}
     
     if username == config["main"]["admin-username"]:
-        dbCon = sqlite.connect('gateway.db')
-        result = dbCon.cursor().execute('SELECT * FROM errors').fetchall()
+        print("INFO: displaying errors page")
+        result = dbc.getErrors()
         return templates.TemplateResponse("errors.html", {"request": request, "errors": result})
 
 @app.get('/executed')
-async def getErrors(request: Request, username: str = Depends(get_current_username)):
+async def getExecuted(request: Request, username: str = Depends(get_current_username)):
     if (config["main"]["admin-username"] == "admin" and config["main"]["admin-password"] == "admin"):
         return {"message": "change the default username and password please!"}
     
     if username == config["main"]["admin-username"]:
-        dbCon = sqlite.connect('gateway.db')
-        result = dbCon.cursor().execute('SELECT * FROM executed').fetchall()
-        result2 = dbCon.cursor().execute('SELECT * FROM verified').fetchall()
+        print("INFO: displaying executed page")
+        result = dbc.getExecutedAll()
+        result2 = dbc.getVerifiedAll()
         return templates.TemplateResponse("tx.html", {"request": request, "txs": result, "vtxs": result2})
 
-@app.get('/ethAddress/{address}')
-async def checkTunnel(address):
-    dbCon = sqlite.connect('gateway.db')
+@app.get('/ethAddress/{address}', response_model=cAdresses)
+async def checkTunnel(address: str):
     address = re.sub('[\W_]+', '', address)
-    values = (address,)
 
-    result = dbCon.cursor().execute('SELECT targetAddress FROM tunnel WHERE sourceAddress = ?', values).fetchall()
+    result = dbc.getTargetAddress(address)
     if len(result) == 0:
-        targetAddress = None
+        targetAddress = ""
     else:
-        targetAddress = result[0][0]
+        targetAddress = result
 
-    return { 'sourceAddress': address, 'targetAddress': targetAddress }
+    return cAdresses(sourceAddress=address, targetAddress=targetAddress)
 
-@app.get('/tunnel/{sourceAddress}/{targetAddress}')
-async def createTunnel(sourceAddress, targetAddress):
-    dbCon = sqlite.connect('gateway.db')
+#TODO: rewrite to post
+@app.get('/tunnel/{sourceAddress}/{targetAddress}', response_model=cExecResult)
+async def createTunnel(sourceAddress: str, targetAddress: str):
     sourceAddress = re.sub('[\W_]+', '', sourceAddress)
     targetAddress = re.sub('[\W_]+', '', targetAddress)
 
-    pwTN = PyCWaves.PyCWaves()
-    pwTN.setNode(node=config['tn']['node'], chain=config['tn']['network'], chain_id='L')
-
-    if not pwTN.validateAddress(targetAddress):
+    if not tnc.validateAddress(targetAddress):
         return {'successful': False}
 
-    try:
-        sourceAddress = w3.toChecksumAddress(sourceAddress)
-    except:
+    if not otc.validateAddress(sourceAddress):
         return { 'successful': False }
 
-    values = (sourceAddress, targetAddress)
+    sourceAddress = otc.normalizeAddress(sourceAddress)
 
-    result = dbCon.cursor().execute('SELECT targetAddress FROM tunnel WHERE sourceAddress = ?', (sourceAddress,)).fetchall()
+    result = dbc.getTargetAddress(sourceAddress)
     if len(result) == 0:
-        if w3.isAddress(sourceAddress):
-            dbCon.cursor().execute('INSERT INTO TUNNEL ("sourceAddress", "targetAddress") VALUES (?, ?)', values)
-            dbCon.commit()
-
-            return { 'successful': True }
-        else:
-            return { 'successful': False }    
+        dbc.insTunnel("created", sourceAddress, targetAddress)
+        print("INFO: tunnel created")
+        return { 'successful': True }
     else:
-        result = dbCon.cursor().execute('SELECT targetAddress FROM tunnel WHERE sourceAddress = ? AND targetAddress = ?', values).fetchall()
-        if len(result) == 0:
+        if result != targetAddress:
             return { 'successful': False }
         else: 
             return { 'successful': True }
 
-@app.get('/deltunnel/{sourceAddress}/{targetAddress}')
-async def deleteTunnel(sourceAddress, targetAddress):
-    dbCon = sqlite.connect('gateway.db')
-    sourceAddress = re.sub('[\W_]+', '', sourceAddress)
-    targetAddress = re.sub('[\W_]+', '', targetAddress)
-
-    try:
-        sourceAddress = w3.toChecksumAddress(sourceAddress)
-    except:
-        return { 'successful': False }
-
-    values = (sourceAddress, targetAddress)
-
-    result = dbCon.cursor().execute('SELECT targetAddress FROM tunnel WHERE sourceAddress = ? AND targetAddress = ?', values).fetchall()
-    if len(result) == 0:
-        return { 'successful': False }
-    else: 
-        dbCon.cursor().execute('DELETE FROM TUNNEL WHERE sourceAddress = ? AND targetAddress = ?', values)
-        dbCon.commit()
-
-        return { 'successful': True }
-
-@app.get('/dustkey/{targetAddress}')
-async def createTunnel(targetAddress):
-    pwTN = PyCWaves.PyCWaves()
-    pwTN.setNode(node=config['tn']['node'], chain=config['tn']['network'], chain_id='L')
-
-    if not pwTN.validateAddress(targetAddress):
+#TODO: rewrite to post
+@app.get('/dustkey/{targetAddress}', response_model=cDustkey)
+async def createTunnelDK(targetAddress: str):
+    if not tnc.validateAddress(targetAddress):
         return {'successful': False}
 
     sourceAddress = str(round(datetime.datetime.now().timestamp()))
     sourceAddress = sourceAddress[-6:]
 
-    dbCon = sqlite.connect('gateway.db')
-    values = (sourceAddress, targetAddress)
-
-    result = dbCon.cursor().execute('SELECT targetAddress FROM tunnel WHERE sourceAddress = ?', (sourceAddress,)).fetchall()
+    result = dbc.getTargetAddress(sourceAddress)
     if len(result) == 0:
-        result = dbCon.cursor().execute('SELECT sourceAddress FROM tunnel WHERE targetAddress = ?', (sourceAddress,)).fetchall()
+        result = dbc.getSourceAddress(targetAddress)
 
         if len(result) == 0:
-            dbCon.cursor().execute('INSERT INTO TUNNEL ("sourceAddress", "targetAddress") VALUES (?, ?)', values)
-            dbCon.commit()
+            dbc.insTunnel("created", sourceAddress, targetAddress)
+            print("INFO: tunnel created - dustkey")
 
             return { 'successful': True, 'dustkey': sourceAddress}
         else:
-            return { 'successful': True, 'dustkey': result[0][0] }
+            return { 'successful': True, 'dustkey': result }
     else:
-        result = dbCon.cursor().execute('SELECT sourceAddress FROM tunnel WHERE sourceAddress = ? AND targetAddress = ?', values).fetchall()
+        result = dbc.getSourceAddress(targetAddress)
         if len(result) == 0:
             return { 'successful': False }
         else: 
-            return { 'successful': True, 'dustkey': result[0][0] }
+            return { 'successful': True, 'dustkey': result }
 
-@app.get("/api/fullinfo")
-async def api_fullinfo(request: Request):
+@app.get("/api/fullinfo", response_model=cFullInfo)
+async def api_fullinfo():
     heights = await getHeights()
     tnBalance = get_tnBalance()
     otherBalance = get_otherBalance()
@@ -226,21 +263,21 @@ async def api_fullinfo(request: Request):
             "tn_gateway_fee":config['tn']['gateway_fee'],
             "tn_network_fee":config['tn']['network_fee'],
             "tn_total_fee":config['tn']['network_fee']+config['tn']['gateway_fee'],
-            "other_gateway_fee":config['erc20']['gateway_fee'],
-            "other_network_fee":config['erc20']['network_fee'],
-            "other_total_fee":config['erc20']['network_fee'] + config['erc20']['gateway_fee'],
+            "other_gateway_fee":config['eth']['gateway_fee'],
+            "other_network_fee":config['eth']['network_fee'],
+            "other_total_fee":config['eth']['network_fee'] + config['eth']['gateway_fee'],
             "fee": config['tn']['fee'],
             "company": config['main']['company'],
             "email": config['main']['contact-email'],
             "telegram": config['main']['contact-telegram'],
             "recovery_amount":config['main']['recovery_amount'],
             "recovery_fee":config['main']['recovery_fee'],
-            "otherHeight": heights['ETH'],
+            "otherHeight": heights['Other'],
             "tnHeight": heights['TN'],
             "tnAddress": config['tn']['gatewayAddress'],
             "tnColdAddress": config['tn']['coldwallet'],
-            "otherAddress": config['erc20']['gatewayAddress'],
-            "otherNetwork": config['erc20']['network'],
+            "otherAddress": config['eth']['gatewayAddress'],
+            "otherNetwork": config['eth']['network'],
             "disclaimer": config['main']['disclaimer'],
             "tn_balance": tnBalance,
             "other_balance": otherBalance,
@@ -249,52 +286,52 @@ async def api_fullinfo(request: Request):
             "type": "tunnel",
             "usageinfo": ""}
 
-@app.get("/api/deposit/{tnAddress}")
-async def api_depositCheck(tnAddress):
-    checkit = verifier(config)
-    result = checkit.checkDeposit(address=tnAddress)
+@app.get("/api/deposit/{tnAddress}", response_model=cDepositWD)
+async def api_depositCheck(tnAddress:str):
+    result = checkit.checkTX(targetAddress=tnAddress)
 
     return result
 
-@app.get("/api/wd/{tnAddress}")
-async def api_wdCheck(tnAddress):
-    checkit = verifier(config)
-    result = checkit.checkWD(address=tnAddress)
+@app.get("/api/wd/{tnAddress}", response_model=cDepositWD)
+async def api_wdCheck(tnAddress: str):
+    result = checkit.checkTX(sourceAddress=tnAddress)
 
     return result
 
-@app.get("/api/checktxs/{tnAddress}")
-async def api_checktxs(tnAddress):
-    checkit = verifier(config)
+@app.get("/api/checktxs/{tnAddress}", response_model=cTxs)
+async def api_checktxs(tnAddress: str):
+    result = dbc.checkTXs(address=tnAddress)
 
-    result = checkit.checkTXs(address=tnAddress)
+    if 'error' in result:
+        temp = cTxs(error=result['error'])
+    else:
+        temp = cTxs(transactions=result)
+        
+    return temp
 
-    return result
-
-@app.get("/api/checktxs")
+@app.get("/api/checktxs", response_model=cTxs)
 async def api_checktxs():
-    checkit = verifier(config)
-    result = checkit.checkTXs(address='')
+    result = dbc.checkTXs(address='')
 
-    return result
+    if 'error' in result:
+        temp = cTxs(error=result['error'])
+    else:
+        temp = cTxs(transactions=result)
 
-@app.get('/fees/{fromdate}/{todate}')
-async def api_getFees(fromdate, todate):
-    checkit = verifier(config)
-    result = checkit.getFees(fromdate, todate)
+    return temp
 
-    return result
+@app.get('/api/fees/{fromdate}/{todate}', response_model=cFees)
+async def api_getFees(fromdate: str, todate: str):
+    return dbc.getFees(fromdate, todate)
 
-@app.get('/fees/{fromdate}')
-async def api_getFees(fromdate):
-    checkit = verifier(config)
-    result = checkit.getFees(fromdate, '')
+@app.get('/api/fees/{fromdate}', response_model=cFees)
+async def api_getFees(fromdate: str):
+    return dbc.getFees(fromdate, '')
 
-    return result
-
-@app.get('/fees')
+@app.get('/api/fees', response_model=cFees)
 async def api_getFees():
-    checkit = verifier(config)
-    result = checkit.getFees('','')
+    return dbc.getFees('','')
 
-    return result
+@app.get('/api/health', response_model=cHealth)
+async def api_getHealth():
+    return checkit.checkHealth()

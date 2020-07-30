@@ -1,125 +1,84 @@
-import os
-import sqlite3 as sqlite
-import requests
 import time
-import base58
-import PyCWaves
 import traceback
+import base58
 import sharedfunc
-from web3 import Web3
+from dbClass import dbCalls
+from tnClass import tnCalls
+from otherClass import otherCalls
 from verification import verifier
 
 class TNChecker(object):
     def __init__(self, config):
         self.config = config
-        self.dbCon = sqlite.connect('gateway.db')
-
-        self.node = self.config['tn']['node']
-        self.w3 = Web3(Web3.HTTPProvider(self.config['erc20']['node']))
-        self.privatekey = os.getenv(self.config['erc20']['seedenvname'], self.config['erc20']['privateKey'])
+        self.db = dbCalls(config)
+        self.otc = otherCalls(config)
+        self.tnc = tnCalls(config)
         self.verifier = verifier(config)
 
-        cursor = self.dbCon.cursor()
-        self.lastScannedBlock = cursor.execute('SELECT height FROM heights WHERE chain = "TN"').fetchall()[0][0]
-
-    def getCurrentBlock(self):
-        #return current block on the chain - try/except in case of timeouts
-        try:
-            CurrentBlock = requests.get(self.node + '/blocks/height').json()['height'] - 1
-        except:
-            CurrentBlock = 0
-
-        return CurrentBlock
+        self.lastScannedBlock = self.db.lastScannedBlock("TN")
 
     def run(self):
         #main routine to run continuesly
-        print('started checking tn blocks at: ' + str(self.lastScannedBlock))
+        #print('INFO: started checking tn blocks at: ' + str(self.lastScannedBlock))
 
-        self.dbCon = sqlite.connect('gateway.db')
         while True:
             try:
-                nextblock = self.getCurrentBlock() - self.config['tn']['confirmations']
+                nextblock = self.tnc.currentBlock() - self.config['tn']['confirmations']
 
                 if nextblock > self.lastScannedBlock:
                     self.lastScannedBlock += 1
                     self.checkBlock(self.lastScannedBlock)
-                    cursor = self.dbCon.cursor()
-                    cursor.execute('UPDATE heights SET "height" = ' + str(self.lastScannedBlock) + ' WHERE "chain" = "TN"')
-                    self.dbCon.commit()
+                    self.db.updHeights(self.lastScannedBlock, 'TN')
             except Exception as e:
                 self.lastScannedBlock -= 1
-                print('Something went wrong during tn block iteration: ')
-                print(traceback.TracebackException.from_exception(e))
+                print('ERROR: Something went wrong during tn block iteration: ' + str(traceback.TracebackException.from_exception(e)))
 
             time.sleep(self.config['tn']['timeInBetweenChecks'])
 
     def checkBlock(self, heightToCheck):
         #check content of the block for valid transactions
-        block =  requests.get(self.node + '/blocks/at/' + str(heightToCheck)).json()
+        block = self.tnc.getBlock(heightToCheck)
         for transaction in block['transactions']:
-            if self.checkTx(transaction):
-                targetAddress = base58.b58decode(transaction['attachment']).decode()
-                targetAddress = self.w3.toChecksumAddress(targetAddress)
+            targetAddress = self.tnc.checkTx(transaction)
 
-                if not(self.w3.isAddress(targetAddress)):
-                    self.faultHandler(transaction, "txerror")
-                else:
-                    amount = transaction['amount'] / pow(10, self.config['tn']['decimals'])
-                    amount -= self.config['erc20']['fee']
-                    amount *= pow(10, self.config['erc20']['decimals'])
-                    amount = int(round(amount))
-
-                    if amount <= 0:
-                        self.faultHandler(transaction, "senderror", e='under minimum amount')
+            if targetAddress is not None:
+                if targetAddress != "No attachment":
+                    if not(self.otc.validateAddress(targetAddress)):
+                        self.faultHandler(transaction, "txerror")
                     else:
-                        try:
-                            nonce = self.w3.eth.getTransactionCount(self.config['erc20']['gatewayAddress'])
-                            if self.config['erc20']['gasprice'] > 0:
-                                gasprice = self.w3.toWei(self.config['erc20']['gasprice'], 'gwei')
+                        targetAddress = self.otc.normalizeAddress(targetAddress)
+                        amount = transaction['amount'] / pow(10, self.config['tn']['decimals'])
+                        
+                        if amount < self.config['main']['min'] or amount > self.config['main']['max']:
+                            self.faultHandler(transaction, "senderror", e='outside amount ranges')
+                        else:
+                            try:
+                                txId = None
+                                self.db.insTunnel('sending', transaction['sender'], targetAddress)
+                                txId = self.otc.sendTx(targetAddress, amount)
+
+                                if not(str(txId.hex()).startswith('0x')):
+                                    self.faultHandler(transaction, "senderror", e=txId.hex())
+                                else:
+                                    print("INFO: send tx: " + str(txId.hex()))
+
+                                    self.db.insExecuted(transaction['sender'], targetAddress, txId.hex(), transaction['id'], amount, self.config['eth']['fee'])
+                                    print('INFO: send tokens from tn to eth!')
+
+                                    #self.db.delTunnel(transaction['sender'], targetAddress)
+                                    self.db.updTunnel("verifying", transaction['sender'], targetAddress, statusOld='sending')
+                            except Exception as e:
+                                self.faultHandler(transaction, "txerror", e=e)
+
+                            if txId is None:
+                                if targetAddress != 'invalid address':
+                                    self.db.insError(transaction['sender'], targetAddress, transaction['id'], '', amount, 'tx failed to send - manual intervention required')
+                                    print("ERROR: tx failed to send - manual intervention required")
+                                    self.db.updTunnel("error", transaction['sender'], targetAddress, statusOld="sending")
                             else:
-                                gasprice = int(self.w3.eth.gasPrice * 1.1)
-
-                            tx = {
-                                'chainId': self.config['erc20']['chainid'],
-                                'to': targetAddress,
-                                'value': amount,
-                                'gas': self.config['erc20']['gas'],
-                                'gasPrice': gasprice,
-                                'nonce': nonce
-                            }
-                            signed_tx = self.w3.eth.account.signTransaction(tx, private_key=self.privatekey)
-                            txId = self.w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-
-                            if not(str(txId.hex()).startswith('0x')):
-                                self.faultHandler(transaction, "senderror", e=txId.hex())
-                            else:
-                                print("send tx: " + str(txId.hex()))
-
-                                cursor = self.dbCon.cursor()
-                                amount /= pow(10, self.config['erc20']['decimals'])
-                                cursor.execute('INSERT INTO executed ("sourceAddress", "targetAddress", "tnTxId", "ethTxId", "amount", "amountFee") VALUES ("' + transaction['sender'] + '", "' + targetAddress + '", "' + transaction['id'] + '", "' + txId.hex() + '", "' + str(round(amount)) + '", "' + str(self.config['erc20']['fee']) + '")')
-                                self.dbCon.commit()
-                                print('send tokens from tn to other network!')
-                        except Exception as e:
-                            self.faultHandler(transaction, "txerror", e=e)
-
-                        self.verifier.verifyOther(txId)
-
-    def checkTx(self, tx):
-        #check the transaction
-        if tx['type'] == 4 and tx['recipient'] == self.config['tn']['gatewayAddress'] and tx['assetId'] == self.config['tn']['assetId']:
-            #check if there is an attachment
-            targetAddress = base58.b58decode(tx['attachment']).decode()
-            if len(targetAddress) > 1:
-                #check if we already processed this tx
-                cursor = self.dbCon.cursor()
-                result = cursor.execute('SELECT ethTxId FROM executed WHERE tnTxId = "' + tx['id'] + '"').fetchall()
-
-                if len(result) == 0: return True
-            else:
-                self.faultHandler(tx, 'noattachment')
-
-        return False
+                                self.otc.verifyTx(txId, transaction['sender'], targetAddress)
+                else:
+                    self.faultHandler(transaction, 'noattachment')
         
     def faultHandler(self, tx, error, e=""):
         #handle transfers to the gateway that have problems
@@ -127,21 +86,15 @@ class TNChecker(object):
         timestampStr = sharedfunc.getnow()
 
         if error == "noattachment":
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "ethTxId", "tnTxId", "amount", "error") VALUES ("' + tx['sender'] + '", "", "", "' + tx['id'] + '", "' + str(amount) + '", "no attachment found on transaction")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: no attachment found on transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], "", tx['id'], "", amount, "no attachment found on transaction")
+            print("ERROR: " + timestampStr + " - Error: no attachment found on transaction from " + tx['sender'] + " - check errors table.")
 
         if error == "txerror":
             targetAddress = base58.b58decode(tx['attachment']).decode()
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "ethTxId", "tnTxId", "amount", "error", "exception") VALUES ("' + tx['sender'] + '", "' + targetAddress + '", "", "' + tx['id'] + '", "' + str(amount) + '", "tx error, possible incorrect address", "' + str(e) + '")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], targetAddress, tx['id'], "", amount, "tx error, possible incorrect address", str(e))
+            print("ERROR: " + timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
 
         if error == "senderror":
             targetAddress = base58.b58decode(tx['attachment']).decode()
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO errors ("sourceAddress", "targetAddress", "ethTxId", "tnTxId", "amount", "error", "exception") VALUES ("' + tx['sender'] + '", "' + targetAddress + '", "", "' + tx['id'] + '", "' + str(amount) + '", "tx error, check exception error", "' + str(e) + '")')
-            self.dbCon.commit()
-            print(timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")
+            self.db.insError(tx['sender'], targetAddress, tx['id'], "", amount, "tx error, check exception error", str(e))
+            print("ERROR: " + timestampStr + " - Error: on outgoing transaction for transaction from " + tx['sender'] + " - check errors table.")

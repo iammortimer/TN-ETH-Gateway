@@ -1,183 +1,204 @@
-import sqlite3 as sqlite
-import time
-import PyCWaves
-from web3 import Web3
+from dbClass import dbCalls
+from tnClass import tnCalls
+from otherClass import otherCalls
 
 class verifier(object):
     def __init__(self, config):
         self.config = config
-        self.dbCon = sqlite.connect('gateway.db', check_same_thread=False)
+        self.db = dbCalls(config)
+        self.tnc = tnCalls(config)
+        self.otc = otherCalls(config)
 
-        self.w3 = Web3(Web3.HTTPProvider(self.config['erc20']['node']))
+    def checkTX(self, targetAddress = '', sourceAddress = ''):
+        result = {'status': '', 'tx': '', 'block': '', 'error': ''}
 
-        self.pwTN = PyCWaves.PyCWaves()
-        self.pwTN.setNode(node=self.config['tn']['node'], chain=self.config['tn']['network'], chain_id='L')
-
-    def verifyOther(self, txId):
-        try:
-            verified = self.w3.eth.waitForTransactionReceipt(txId.hex(), timeout=120)
-
-            if verified['blockNumber'] > 0:
-                values = ("ETH", txId.hex(), verified['blockNumber'])
-                cursor = self.dbCon.cursor()
-                cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-                self.dbCon.commit()
-                print('tx to eth verified!')
-            else:
-                values = ("ETH", txId.hex(), 0)
-                cursor = self.dbCon.cursor()
-                cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-                self.dbCon.commit()
-                print('tx to eth not verified!')
-        except:
-            values = ("ETH", txId.hex(), 0)
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-            self.dbCon.commit()
-            print('tx to eth not verified!')
-
-    def verifyTN(self, tx):
-        try:
-            time.sleep(60)
-            verified = self.pwTN.tx(tx['id'])
-
-            if verified['height'] > 0:
-                values = ("TN", tx['id'], verified['height'])
-                cursor = self.dbCon.cursor()
-                cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-                self.dbCon.commit()
-                print('tx to tn verified!')
-            else:
-                values = ("TN", tx['id'], 0)
-                cursor = self.dbCon.cursor()
-                cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-                self.dbCon.commit()
-                print('tx to tn not verified!')
-        except:
-            values = ("TN", tx['id'], 0)
-            cursor = self.dbCon.cursor()
-            cursor.execute('INSERT INTO verified ("chain", "tx", "block") VALUES (?, ?, ?)', values)
-            self.dbCon.commit()
-            print('tx to tn not verified!')
-
-    def checkDeposit(self, address):
-        if not self.pwTN.validateAddress(address):
-            return {'error': 'invalid address'}
+        if targetAddress != '':
+            address = targetAddress
+        elif  sourceAddress != '':
+            address = sourceAddress
         else:
-            cursor = self.dbCon.cursor()
-            sql = 'SELECT tnTxId FROM executed WHERE targetAddress = ? ORDER BY id DESC LIMIT 1'
-            tx = cursor.execute(sql, (address, )).fetchall()
+            result['status'] = 'error'
+            result['error'] = 'invalid address'
+            return result
 
-            if len(tx) == 0:
-                return {'error': 'no tx found'}
-            else:
-                sql = 'SELECT block FROM verified WHERE tx = ?'
-                result = cursor.execute(sql, (tx[0][0], )).fetchall()
+        if not self.tnc.validateAddress(address):
+            result['status'] = 'error'
+            result['error'] = 'invalid address'
+            return result
+        else:
+            tx = self.db.getTunnelStatus(targetAddress=address)
 
-                if len(result) == 0:
-                    return {'txVerified': False, 'tx': tx[0][0], 'block': 0} 
-                else:
-                    if result[0][0] > 0:
-                        return {'txVerified': True, 'tx': tx[0][0], 'block': result[0][0]} 
+            if len(tx) != 0:
+                result['status'] = tx[0][0]
+                
+                if result['status'] == "sending" or result['status'] == "verifying":
+                    resexec = self.checkExecuted(targetAddress=targetAddress, sourceAddress=sourceAddress)
+
+                    if 'error' in resexec:
+                        result['error'] = resexec['error']
                     else:
-                        return {'txVerified': False, 'tx': tx[0][0], 'block': result[0][0]} 
+                        result['tx'] = resexec['tx']
+                        result['block'] = resexec['block']
+                elif result['status'] == "created":
+                    return result
+                elif result['status'] == "error":
+                    resexec = self.db.getError(targetAddress=targetAddress, sourceAddress=sourceAddress)
 
-    def checkWD(self, address):
-        if not self.pwTN.validateAddress(address):
+                    if len(resexec) != 0:
+                        result['error'] = resexec[0][0]
+                        if targetAddress != '':
+                            result['tx'] = resexec[0][2]
+                        else:
+                            result['tx'] = resexec[0][1]
+            else:
+                resexec = self.checkExecuted(targetAddress=targetAddress, sourceAddress=sourceAddress)
+
+                if 'error' in resexec:
+                    result['error'] = resexec['error']
+                else:
+                    result['tx'] = resexec['tx']
+                    result['block'] = resexec['block']
+
+        return result
+
+    def checkExecuted(self, targetAddress = '', sourceAddress = ''):
+        if targetAddress != '':
+            tx = self.db.getExecuted(targetAddress=targetAddress)
+        elif  sourceAddress != '':
+            tx = self.db.getExecuted(sourceAddress=sourceAddress)
+        else:
             return {'error': 'invalid address'}
-        else:
-            cursor = self.dbCon.cursor()
-            sql = 'SELECT ethTxId FROM executed WHERE sourceAddress = ? ORDER BY id DESC LIMIT 1'
-            tx = cursor.execute(sql, (address, )).fetchall()
-
-            if len(tx) == 0:
-                return {'error': 'no tx found'}
-            else:
-                sql = 'SELECT block FROM verified WHERE tx = ?'
-                result = cursor.execute(sql, (tx[0][0], )).fetchall()
-
-                if len(result) == 0:
-                    return {'txVerified': False, 'tx': tx[0][0], 'block': 0} 
-                else:
-                    if result[0][0] > 0:
-                        return {'txVerified': True, 'tx': tx[0][0], 'block': result[0][0]} 
-                    else:
-                        return {'txVerified': False, 'tx': tx[0][0], 'block': result[0][0]} 
-
-    def checkTXs(self, address):
-        if len(address) == 0:
-            cursor = self.dbCon.cursor()
-            sql = "SELECT e.sourceAddress, e.targetAddress, e.tnTxId, e.ethTxId as 'OtherTxId', v.block as 'TNVerBlock', v2.block as 'OtherVerBlock', e.amount, CASE WHEN e.targetAddress LIKE '3J%' THEN 'Deposit' ELSE 'Withdraw' END 'TypeTX', " \
-            "CASE WHEN e.targetAddress LIKE '3J%' AND v.block IS NOT NULL THEN 'verified' WHEN e.targetAddress NOT LIKE '3J%' AND v2.block IS NOT NULL AND v2.block IS NOT 0 THEN 'verified' ELSE 'unverified' END 'Status' " \
-            "FROM executed e LEFT JOIN verified v ON e.tnTxId = v.tx LEFT JOIN verified v2 ON e.ethTxId = v2.tx "
-            cursor.execute(sql)
-
-            tx = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-            cursor.connection.close()
-
-            if len(tx) == 0:
-                return {'error': 'no tx found'}
-            else:
-                return tx
-        else:
-            if not self.pwTN.validateAddress(address):
-                return {'error': 'invalid address'}
-            else:
-                cursor = self.dbCon.cursor()
-                sql = "SELECT e.sourceAddress, e.targetAddress, e.tnTxId, e.ethTxId as 'OtherTxId', v.block as 'TNVerBlock', v2.block as 'OtherVerBlock', e.amount, CASE WHEN e.targetAddress LIKE '3J%' THEN 'Deposit' ELSE 'Withdraw' END 'TypeTX', " \
-                "CASE WHEN e.targetAddress LIKE '3J%' AND v.block IS NOT NULL THEN 'verified' WHEN e.targetAddress NOT LIKE '3J%' AND v2.block IS NOT NULL AND v2.block IS NOT 0 THEN 'verified' ELSE 'unverified' END 'Status' " \
-                "FROM executed e LEFT JOIN verified v ON e.tnTxId = v.tx LEFT JOIN verified v2 ON e.ethTxId = v2.tx WHERE (e.sourceAddress = ? or e.targetAddress = ?)"
-                cursor.execute(sql, (address, address))
-
-                tx = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
-                cursor.connection.close()
-
-                if len(tx) == 0:
-                    return {'error': 'no tx found'}
-                else:
-                    return tx
-
-    def getFees(self, fromdate, todate):
-        from datetime import timedelta
-        import datetime
-
-        #check date notation
-        if len(fromdate) != 0:
-            fromyear,frommonth,fromday = fromdate.split('-')
-
-            isValidFromDate = True
-            try :
-                datetime.datetime(int(fromyear),int(frommonth),int(fromday))
-            except ValueError :
-                isValidFromDate = False
-        else:
-            isValidFromDate = False
-
-        if len(todate) != 0:
-            toyear,tomonth,today = todate.split('-')
-
-            isValidtoDate = True
-            try :
-                datetime.datetime(int(toyear),int(tomonth),int(today))
-            except ValueError :
-                isValidtoDate = False
-        else:
-            isValidtoDate = False
-
-        if not isValidFromDate:
-            fromdate = '1990-01-01'
-    
-        if not isValidtoDate:
-            todat = datetime.date.today() + timedelta(days=1)
-            todate = todat.strftime('%Y-%m-%d')
         
-        dbCon = sqlite.connect('gateway.db')
-        values = (fromdate, todate)
-
-        result = dbCon.cursor().execute("SELECT SUM(amountFee) as totalFee from executed WHERE timestamp > ? and timestamp < ?", values).fetchall()
-        if len(result) == 0:
-            Fees = 0
+        if len(tx) == 0:
+            return {'error': 'no tx found'}
         else:
-            Fees = result[0][0]
+            tx = tx[0][0]
+            result = self.db.getVerified(tx)
 
-        return { 'totalFees': Fees }
+            if result is None:
+                return {'txVerified': False, 'tx': tx, 'block': 0} 
+            else:
+                if result > 0:
+                    return {'txVerified': True, 'tx': tx, 'block': result} 
+                else:
+                    return {'txVerified': False, 'tx': tx, 'block': result} 
+
+    def checkHealth(self):
+        connTN = self.chConnection('TN')
+        connOther = self.chConnection('other')
+        heightTN = self.chHeight('TN')
+        heightOther = self.chHeight('other')
+        balanceTN = self.chBalance('TN')
+        balanceOther = self.chBalance('other')
+        numErrors = self.chErrors()
+
+        total = 0
+
+        if connTN: total += 100
+        if connOther: total += 100
+
+        if heightOther < 100: total += 100
+        elif heightOther > 100: total += 50
+        if heightTN < 100: total += 100
+        elif heightTN > 100: total += 50
+
+        if (self.config["main"]["max"] * 10) > balanceOther > 0: total += 100
+        if (self.config["main"]["max"] * 10) > balanceTN > 0: total += 100
+
+        if numErrors == 0: total += 100
+        elif numErrors < 10: total += 50
+
+        if not connTN or not connOther:
+            status = "red"
+        elif total == 700:
+            status = "green"
+        else:
+            status = "yellow"
+        
+        result = {
+            "status": status,
+            "connectionTN": connTN,
+            "connectionOther": connOther,
+            "blocksbehindTN": heightTN,
+            "blockbehindOther": heightOther,
+            "balanceTN": balanceTN,
+            "balanceOther": balanceOther,
+            "numberErrors": numErrors
+        }
+
+        return result
+
+    def chConnection(self, chain):
+        if chain == 'TN':
+            try:
+                value = self.tnc.currentBlock()
+            except:
+                value = 0
+        else:
+            try:
+                value = self.otc.currentBlock()
+            except:
+                value = 0
+
+        if value > 0:
+            return True
+        else:
+            return False
+
+    def chHeight(self, chain):
+        if chain == 'TN':
+            try:
+                current = self.tnc.currentBlock() - self.config["tn"]["confirmations"]
+            except:
+                current = 0
+
+            lastscanned = self.db.lastScannedBlock("TN")
+        else:
+            try:
+                current = self.otc.currentBlock() - self.config["eth"]["confirmations"]
+            except:
+                current = 0
+
+            lastscanned = self.db.lastScannedBlock("ETH")
+
+        if current > 0:
+            diff = current - lastscanned
+            return diff
+        else:
+            return -1
+
+    def chBalance(self, chain):
+        if chain == 'TN':
+            try:
+                current = self.tnc.currentBalance()
+            except:
+                current = 0
+        else:
+            try:
+                current = self.otc.currentBalance()
+            except:
+                current = 0
+
+        #if current > 0:
+            #if current < self.config["main"]["max"]:
+            #    return "Too low"
+            #elif current > (self.config["main"]["max"] * 10):
+            #    return "Too high"
+            #else:
+            #    return "Good"
+        #else:
+        #    return "Error"
+        return current
+
+    def chErrors(self):
+        errors = self.db.getErrors()
+
+        #if len(errors) > 50:
+        #    return "Bad"
+        #elif 10 < len(errors) < 50:
+        #    return "Fair"
+        #else:
+        #    return "Good"
+        
+        return len(errors)
+
