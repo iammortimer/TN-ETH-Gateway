@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <link rel="stylesheet" type="text/css" href="/static/index2.css">
+  <link href="https://fonts.googleapis.com/css?family=Muli&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">	<script src="/static/app.js"></script>
+	<script src="/static/app.js"></script>
+  <title>{{chainName}} <-> TN Gateway</title>
+</head>
+
+<body>
+  <div class="content">
+    <header class="deskHeader">
+      <div class="logos">
+        <div class="logobg">
+          <img class="logo" src="/static/eth.png" alt={{chainName}} + " Logo">
+        </div>
+        <div class="title">
+          <h1>
+            ${{chainName}} ⬌ Gateway
+          </h1>
+        </div>
+        <div class="logobg">
+          <img class="logo" src="/static/tn.png" alt="TN Logo">
+        </div>
+      </div>
+    </header>
+    <header class="header">
+      <div class="title">
+        <h1>
+          ${{chainName}} ⬍ Gateway
+        </h1>
+      </div>
+      <div class="logos">
+        <div class="logobg">
+          <img class="logo" src="/static/eth.png" alt={{chainName}} + " Logo">
+        </div>
+        <div class="logobg">
+          <img class="logo" src="/static/tn.png" alt="TN Logo">
+        </div>
+      </div>
+    </header>
+    <div class="description down">
+      <div class="emote">
+        <p>🛈</p>
+      </div>
+      <div class="info">
+        <h2>This is a gateway for exchanging ${{chainName}} between ${{chainName}} Network and Turtle Network.</h2>
+          <p>By using this service you agree to the following <a href="{{ disclaimer }}">terms and conditions</a>.</p>
+        <h3>
+					<strong>To Send ${{chainName}} to ${{chainName}} Network ,</strong> using Turtle Network wallet
+        </h3>
+        <p>
+          - Click "SEND"</br>
+          - Recipient's Address = {{ tnAddress }}</br>
+          - Attachment = only insert your ${{ chainName }} wallet address</br>
+        </p>
+        <h3>
+					<strong>To Send ${{chainName}} to Turtle Network,</strong> using ${{chainName}} wallet
+        </h3>
+        <p>
+          - Fill in your source ${{chainName}} wallet address and the receiving Turtle Network wallet address below</br>
+          - Click "Establish Tunnel"</br>
+          - From your ${{chainName}} wallet send the ${{chainName}} tokens to the gateway wallet</br>
+          - Recipient's Address = {{ ethAddress }}</br>
+          - Tunnels are one time use, they are deleted after a succesfull transfer</br>
+          - If you want to verify a tunnel fill in your ${{chainName}} wallet address and click "Check ${{chainName}} Tunnel"</br>
+        </p>
+      </div>
+    </div>
+    <div class="description left">
+      <div class="emote">
+        <p>⇌</p>
+      </div>
+      <form class="form" role="form">
+        <table style="width:100%">
+            <tr>
+                <td>
+                  <label for="ethAddress">
+                    ${{chainName}} Address
+                  </label>
+                </td>
+                <td>
+                  <label for="tnAddress">
+                    TN Address
+                  </label>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                  <input type="text" class="form-control" id="ethAddress" style="width:90%" />
+                </td>
+                <td>
+                  <input type="text" class="form-control" id="tnAddress" style="width:90%" />
+                </td>
+            </tr>
+        </table>
+        <div class="buttons">
+          <button onclick="establishTunnel(event)" class="establish">
+            Establish Tunnel
+          </button>
+          <button onclick="checkETHAddress(event)" class="check">
+            Check ${{chainName}} Tunnel
+          </button>
+        </div>
+      </form>
+    </div>
+    <div class="description right">
+      <div class="emote">
+        <p>🛈</p>
+      </div>
+      <div class="info">
+        <p class="address">
+          Turtle Network height: <strong>{{ tnHeight }}</strong>, Turtle Network Gateway Address: <strong>{{ tnAddress }}</strong>
+        </p>
+        <p class="address">
+          ${{chainName}} Network height: <strong>{{ ethHeight }}</strong>, Ethereum Network Gateway Address: <strong>{{ ethAddress }}</strong>
+        </p>
+        <p class="address">
+          {{chainName}} Official ASSET ID: <strong>{{ assetID }}</strong>
+        </p>
+      </div>
+    </div>
+    <div class="description right">
+      <div class="emote">
+        <p>🛈</p>
+      </div>
+      <div class="info">
+        <h3>
+          Fees: 
+        </h3>
+        <table style="width:100%">
+            <tr>
+                <th>Withdraw</th>
+                <th>Deposit</th>
+            </tr>
+            <tr>
+                <td> Total {{ eth_total_fee }} ${{ chainName }} for <strong>Withdraw:</strong></br>
+                    ({{ eth_network_fee }} ${{ chainName }} for network fee)</br>
+                    ({{ eth_gateway_fee }} ${{ chainName }} for gateway fee)</br>
+                    Note: Transaction must be higher than {{ eth_total_fee }} ${{ chainName }}.</br></td>
+                <td> Total {{ tn_total_fee }} ${{ chainName }} for <strong>Deposit:</strong></br>
+                    ({{ tn_network_fee }} ${{ chainName }} for network fee)</br>
+                    ({{ tn_gateway_fee }} ${{ chainName }} for gateway fee)</br>
+                    Note: Transaction must be higher than {{ tn_total_fee }} ${{ chainName }}.</br></td>
+            </tr>
+        </table>
+        </br>
+      </div>
+    </div>
+    <div class="description up">
+      <div class="emote">
+        <p>⚠</p>
+      </div>
+      <div class="disclaimer">
+        <h3>
+          DISCLAIMER: Erronious sends can only be recovered if they are in
+          gateway controlled wallets.</br>
+          Tunnels are one time use, they are deleted after a succesfull transfer.
+        </h3>
+        <h3>
+          <strong>Recovery policy</strong></br>
+          - Please contact support within 3 days of transfer issue.</br>
+          - Minimal amount to recover {{ recovery_amount }} ${{ chainName }}.</br>
+          - Recovery fee on end-user mistake = {{ recovery_fee }}%.</br>
+        </h3>
+        <p class="mail">
+          This gateway is run by {{ company }} - contact us at <a href="mailto:{{ email }}">{{ email }}</a> or Telegram at <a href="{{ telegram }}">{{ telegram }}</a>
+        </p>
+        <p class="mail">
+          By using this service you accept the following <a href="{{ disclaimer }}">agreement</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
