@@ -1,15 +1,108 @@
-import PyCWaves
 import sqlite3 as sqlite
 from datetime import timedelta
 import datetime
+import os
 
 class dbCalls(object):
     def __init__(self, config):
         self.config = config
-        self.dbCon = sqlite.connect('gateway.db', check_same_thread=False)
-        self.pwTN = PyCWaves.PyCWaves()
-        self.pwTN.THROW_EXCEPTION_ON_ERROR = True
-        self.pwTN.setNode(node=self.config['tn']['node'], chain=self.config['tn']['network'], chain_id='L')
+
+        if self.config["main"]["db-location"] != "":
+            path= os.getcwd()
+            dbfile = path + '\\' + self.config["main"]["db-location"] + '\\' + 'gateway.db'
+            dbfile = os.path.normpath(dbfile)
+        else:
+            dbfile = 'gateway.db'
+
+        self.dbCon = sqlite.connect(dbfile, check_same_thread=False)
+
+#DB Setup part
+    def createdb(self):
+        createHeightTable = '''
+            CREATE TABLE IF NOT EXISTS heights (
+                id integer PRIMARY KEY,
+                chain text NOT NULL,
+                height integer
+            );
+        '''
+        createTunnelTable = '''
+            CREATE TABLE IF NOT EXISTS tunnel (
+                id integer PRIMARY KEY,
+                sourceAddress text NOT NULL,
+                targetAddress text NOT NULL,
+                timestamp timestamp
+                default current_timestamp,
+                status text
+            );
+        '''
+        createTableExecuted = '''
+            CREATE TABLE IF NOT EXISTS executed (
+                id integer PRIMARY KEY,
+                sourceAddress text NOT NULL,
+                targetAddress text NOT NULL,
+                tnTxId text NOT NULL,
+                ethTxId text NOT NULL,
+                timestamp timestamp
+                default current_timestamp,
+                amount real,
+                amountFee real
+        );
+        '''
+        createTableErrors = '''
+            CREATE TABLE IF NOT EXISTS errors (
+                id integer PRIMARY KEY,
+                sourceAddress text ,
+                targetAddress text ,
+                tnTxId text ,
+                ethTxId text ,
+                timestamp timestamp
+                default current_timestamp,
+                amount real,
+                error text,
+                exception text
+        );
+        '''
+        cursor = self.dbCon.cursor()
+        cursor.execute(createHeightTable)
+        cursor.execute(createTunnelTable)
+        cursor.execute(createTableExecuted)
+        cursor.execute(createTableErrors)
+        self.dbCon.commit()
+
+    def createVerify(self):
+        createVerifyTable = '''
+            CREATE TABLE IF NOT EXISTS verified (
+                id integer PRIMARY KEY,
+                chain text NOT NULL,
+                tx text NOT NULL,
+                block integer
+            );
+        '''
+        cursor = self.dbCon.cursor()
+        cursor.execute(createVerifyTable)
+        self.dbCon.commit()
+
+    def updateExisting(self):
+        try:
+            sql = 'ALTER TABLE tunnel ADD COLUMN timestamp timestamp;'
+
+            cursor = self.dbCon.cursor()
+            cursor.execute(sql)
+            self.dbCon.commit()
+
+            sql = 'ALTER TABLE tunnel ADD COLUMN status text;'
+
+            cursor = self.dbCon.cursor()
+            cursor.execute(sql)
+            self.dbCon.commit()
+
+            sql = 'UPDATE tunnel SET status = "created"'
+
+            cursor = self.dbCon.cursor()
+            cursor.execute(sql)
+            self.dbCon.commit()
+        except:
+            return
 
 #heights table related
     def lastScannedBlock(self, chain):
