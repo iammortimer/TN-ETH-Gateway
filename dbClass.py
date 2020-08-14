@@ -136,6 +136,14 @@ class dbCalls(object):
         qryResult = cursor.execute(sql, values)
         self.dbCon.commit()
 
+    def insHeights(self, block, chain):
+        sql = 'INSERT INTO heights ("chain", "height") VALUES (?, ?)'
+        values = (chain, block)
+
+        cursor = self.dbCon.cursor()
+        qryResult = cursor.execute(sql, values)
+        self.dbCon.commit()
+
 #tunnel table related
     def doWeHaveTunnels(self):
         sql = 'SELECT * FROM tunnel WHERE status = "created"'
@@ -369,21 +377,18 @@ class dbCalls(object):
 
 #other
     def checkTXs(self, address):
-        if len(address) == 0:
+        if address == '':
             cursor = self.dbCon.cursor()
             sql = "SELECT e.sourceAddress, e.targetAddress, e.tnTxId, e.ethTxId as 'OtherTxId', ifnull(v.block, 0) as 'TNVerBlock', ifnull(v2.block, 0) as 'OtherVerBlock', e.amount, CASE WHEN e.targetAddress LIKE '3J%' THEN 'Deposit' ELSE 'Withdraw' END 'TypeTX', " \
             "CASE WHEN e.targetAddress LIKE '3J%' AND v.block IS NOT NULL THEN 'verified' WHEN e.targetAddress NOT LIKE '3J%' AND v2.block IS NOT NULL AND v2.block IS NOT 0 THEN 'verified' ELSE 'unverified' END 'Status' " \
             "FROM executed e LEFT JOIN verified v ON e.tnTxId = v.tx LEFT JOIN verified v2 ON e.ethTxId = v2.tx "
             cursor.execute(sql)
         else:
-            if not self.pwTN.validateAddress(address):
-                return {'error': 'invalid address'}
-            else:
-                cursor = self.dbCon.cursor()
-                sql = "SELECT e.sourceAddress, e.targetAddress, e.tnTxId, e.ethTxId as 'OtherTxId', ifnull(v.block, 0) as 'TNVerBlock', ifnull(v2.block, 0) as 'OtherVerBlock', e.amount, CASE WHEN e.targetAddress LIKE '3J%' THEN 'Deposit' ELSE 'Withdraw' END 'TypeTX', " \
-                "CASE WHEN e.targetAddress LIKE '3J%' AND v.block IS NOT NULL THEN 'verified' WHEN e.targetAddress NOT LIKE '3J%' AND v2.block IS NOT NULL AND v2.block IS NOT 0 THEN 'verified' ELSE 'unverified' END 'Status' " \
-                "FROM executed e LEFT JOIN verified v ON e.tnTxId = v.tx LEFT JOIN verified v2 ON e.ethTxId = v2.tx WHERE (e.sourceAddress = ? or e.targetAddress = ?)"
-                cursor.execute(sql, (address, address))
+            cursor = self.dbCon.cursor()
+            sql = "SELECT e.sourceAddress, e.targetAddress, e.tnTxId, e.ethTxId as 'OtherTxId', ifnull(v.block, 0) as 'TNVerBlock', ifnull(v2.block, 0) as 'OtherVerBlock', e.amount, CASE WHEN e.targetAddress LIKE '3J%' THEN 'Deposit' ELSE 'Withdraw' END 'TypeTX', " \
+            "CASE WHEN e.targetAddress LIKE '3J%' AND v.block IS NOT NULL THEN 'verified' WHEN e.targetAddress NOT LIKE '3J%' AND v2.block IS NOT NULL AND v2.block IS NOT 0 THEN 'verified' ELSE 'unverified' END 'Status' " \
+            "FROM executed e LEFT JOIN verified v ON e.tnTxId = v.tx LEFT JOIN verified v2 ON e.ethTxId = v2.tx WHERE (e.sourceAddress = ? or e.targetAddress = ?)"
+            cursor.execute(sql, (address, address))
 
         tx = [dict((cursor.description[i][0], value) for i, value in enumerate(row)) for row in cursor.fetchall()]
         cursor.connection.close()

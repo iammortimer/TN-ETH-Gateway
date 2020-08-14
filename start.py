@@ -30,8 +30,9 @@ def main():
     try:
         result = dbc.lastScannedBlock("TN")
 
-        if len(result) == 0:
-            initialisedb()
+        if not isinstance(result, int):
+            if len(result) == 0:
+                initialisedb()
     except:
         dbc.createdb()
         initialisedb()
