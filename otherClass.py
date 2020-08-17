@@ -93,7 +93,7 @@ class otherCalls(object):
         amount *= pow(10, self.config['eth']['decimals'])
         amount = int(round(amount))
 
-        nonce = self.w3.eth.getTransactionCount(self.config['eth']['gatewayAddress'])
+        nonce = self.w3.eth.getTransactionCount(self.config['eth']['gatewayAddress'], 'pending')
 
         if gasprice == None:
             if self.config['eth']['gasprice'] > 0:
