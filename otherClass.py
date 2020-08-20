@@ -31,7 +31,7 @@ class otherCalls(object):
         return self.w3.eth.getBlock(height)
 
     def currentBalance(self):
-        contract = self.w3.eth.getBalance(config['eth']['gatewayAddress'])
+        balance = self.w3.eth.getBalance(self.config['eth']['gatewayAddress'])
         balance /= pow(10, self.config['eth']['contract']['decimals'])
 
         return int(round(balance))
