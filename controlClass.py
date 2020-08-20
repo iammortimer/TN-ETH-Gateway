@@ -38,7 +38,7 @@ class controller(object):
                     txid = self.db.getExecuted(targetAddress=targetAddress)
 
                     print("INFO: verify tx: " + txid[0][0])
-                    if sourceAddress[:2] == '0x':
+                    if txid[0][0][:2] != '0x':
                         tx = {'id': txid[0][0]}
                         self.tnc.verifyTx(tx, sourceAddress, targetAddress)
                     else:

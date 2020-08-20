@@ -34,7 +34,7 @@ The config.json file includes all necessary settings that need to be connfigured
         "index-file": "name of the index.html to use, if left blank index.html will be used",
         "db-location": "directory name if the db file is not in the main directory"
     },
-    "erc20": {
+    "eth": {
         "node": "<the eth node you want to connect to>",
         "chainid": <chainid of the ETH chain this is>,
         "gatewayAddress": "<Waves address of the gateway>",

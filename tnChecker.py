@@ -12,7 +12,7 @@ class TNChecker(object):
     def __init__(self, config):
         self.config = config
         self.db = dbCalls(config)
-        if self.config['erc20']['etherscan-on']:
+        if self.config['eth']['etherscan-on']:
             self.otc = etherscanCalls(config)
         else:
             self.otc = otherCalls(config)
