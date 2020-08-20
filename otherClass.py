@@ -32,7 +32,7 @@ class otherCalls(object):
 
     def currentBalance(self):
         balance = self.w3.eth.getBalance(self.config['eth']['gatewayAddress'])
-        balance /= pow(10, self.config['eth']['contract']['decimals'])
+        balance /= pow(10, self.config['eth']['decimals'])
 
         return int(round(balance))
 
