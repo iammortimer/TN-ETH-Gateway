@@ -12,7 +12,7 @@ class TNChecker(object):
     def __init__(self, config):
         self.config = config
         self.db = dbCalls(config)
-        if self.config['eth']['etherscan-on']:
+        if self.config['other']['etherscan-on']:
             self.otc = etherscanCalls(config)
         else:
             self.otc = otherCalls(config)
@@ -67,7 +67,7 @@ class TNChecker(object):
                                 else:
                                     print("INFO: send tx: " + str(txId.hex()))
 
-                                    self.db.insExecuted(transaction['sender'], targetAddress, txId.hex(), transaction['id'], amount, self.config['eth']['fee'])
+                                    self.db.insExecuted(transaction['sender'], targetAddress, txId.hex(), transaction['id'], amount, self.config['other']['fee'])
                                     print('INFO: send tokens from tn to eth!')
 
                                     #self.db.delTunnel(transaction['sender'], targetAddress)

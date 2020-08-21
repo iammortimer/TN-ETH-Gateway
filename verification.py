@@ -8,7 +8,7 @@ class verifier(object):
         self.config = config
         self.db = dbCalls(config)
         self.tnc = tnCalls(config)
-        if self.config['eth']['etherscan-on']:
+        if self.config['other']['etherscan-on']:
             self.otc = etherscanCalls(config)
         else:
             self.otc = otherCalls(config)

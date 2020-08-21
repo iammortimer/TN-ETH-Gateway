@@ -8,15 +8,15 @@ class otherCalls(object):
         self.config = config
         self.db = dbCalls(config)
         self.w3 = self.getWeb3Instance()
-        self.privatekey = os.getenv(self.config['eth']['seedenvname'], self.config['eth']['privateKey'])
+        self.privatekey = os.getenv(self.config['other']['seedenvname'], self.config['other']['privateKey'])
 
         self.lastScannedBlock = self.db.lastScannedBlock("ETH")
 
     def getWeb3Instance(self):
         instance = None
 
-        if self.config['eth']['node'].startswith('http'):
-            instance = Web3(Web3.HTTPProvider(self.config['eth']['node']))
+        if self.config['other']['node'].startswith('http'):
+            instance = Web3(Web3.HTTPProvider(self.config['other']['node']))
         else:
             instance = Web3()
 
@@ -31,10 +31,10 @@ class otherCalls(object):
         return self.w3.eth.getBlock(height)
 
     def currentBalance(self):
-        balance = self.w3.eth.getBalance(self.config['eth']['gatewayAddress'])
-        balance /= pow(10, self.config['eth']['decimals'])
+        balance = self.w3.eth.getBalance(self.config['other']['gatewayAddress'])
+        balance /= pow(10, self.config['other']['decimals'])
 
-        return int(round(balance))
+        return balance
 
     def normalizeAddress(self, address):
         if self.w3.isAddress(address):
@@ -76,12 +76,12 @@ class otherCalls(object):
         result = None
         transaction = self.w3.eth.getTransaction(tx)
 
-        if transaction['to'] == self.config['eth']['gatewayAddress']:
+        if transaction['to'] == self.config['other']['gatewayAddress']:
             transactionreceipt = self.w3.eth.getTransactionReceipt(tx)
             if transactionreceipt['status']:
                 sender = transaction['from']
                 recipient = transaction['to']
-                amount = transaction['value'] / 10 ** self.config['eth']['decimals']
+                amount = transaction['value'] / 10 ** self.config['other']['decimals']
 
                 if not self.db.didWeSendTx(tx.hex()): 
                     result = { 'sender': sender, 'function': 'transfer', 'recipient': recipient, 'amount': amount, 'id': tx.hex() }
@@ -89,26 +89,26 @@ class otherCalls(object):
         return result
 
     def sendTx(self, targetAddress, amount, gasprice = None, gas = None):
-        amount -= self.config['eth']['fee']
-        amount *= pow(10, self.config['eth']['decimals'])
+        amount -= self.config['other']['fee']
+        amount *= pow(10, self.config['other']['decimals'])
         amount = int(round(amount))
 
-        nonce = self.w3.eth.getTransactionCount(self.config['eth']['gatewayAddress'], 'pending')
+        nonce = self.w3.eth.getTransactionCount(self.config['other']['gatewayAddress'], 'pending')
 
         if gasprice == None:
-            if self.config['eth']['gasprice'] > 0:
-                gasprice = self.w3.toWei(self.config['eth']['gasprice'], 'gwei')
+            if self.config['other']['gasprice'] > 0:
+                gasprice = self.w3.toWei(self.config['other']['gasprice'], 'gwei')
             else:
                 gasprice = int(self.w3.eth.gasPrice * 1.1)
 
         if gas == None:
-            gas = self.config['eth']['gas']
+            gas = self.config['other']['gas']
 
         tx = {
-            'chainId': self.config['eth']['chainid'],
+            'chainId': self.config['other']['chainid'],
             'to': targetAddress,
             'value': amount,
-            'gas': self.config['eth']['gas'],
+            'gas': self.config['other']['gas'],
             'gasPrice': gasprice,
             'nonce': nonce
         }

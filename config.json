@@ -15,7 +15,7 @@
         "index-file": "name of the index.html to use, if left blank index.html will be used",
         "db-location": "directory name if the db file is not in the main directory"
     },
-    "eth": {
+    "other": {
         "node": "<the eth node you want to connect to>",
         "chainid": <chainid of the ETH chain this is>,
         "decimals": <number of decimals of the token>,
