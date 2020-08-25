@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from verification import verifier
 from dbClass import dbCalls
+from dbPGClass import dbPGCalls
 from otherClass import otherCalls
 from tnClass import tnCalls
 from etherscanClass import etherscanCalls
@@ -115,7 +116,6 @@ templates = Jinja2Templates(directory="templates")
 with open('config.json') as json_file:
     config = json.load(json_file)
 
-dbc = dbCalls(config)
 tnc = tnCalls(config)
 
 if config['other']['etherscan-on']:
@@ -123,6 +123,11 @@ if config['other']['etherscan-on']:
 else:
     otc = otherCalls(config)
     
+if config['main']['use-pg']:
+    dbc = dbPGCalls(config)
+else:
+    dbc = dbCalls(config)
+
 checkit = verifier(config)
 
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
@@ -308,7 +313,7 @@ async def api_wdCheck(tnAddress: str):
 
 @app.get("/api/checktxs/{tnAddress}", response_model=cTxs)
 async def api_checktxs(tnAddress: str):
-    if not tnc.validateAddress(address):
+    if not tnc.validateAddress(tnAddress):
         temp = cTxs(error='invalid address')
     else:
         result = dbc.checkTXs(address=tnAddress)
