@@ -9,4 +9,4 @@ jinja2
 aiofiles
 web3
 pydantic
-psycopg2
+psycopg2-binary
