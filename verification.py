@@ -5,19 +5,23 @@ from otherClass import otherCalls
 from etherscanClass import etherscanCalls
 
 class verifier(object):
-    def __init__(self, config):
+    def __init__(self, config, db = None):
         self.config = config
-        self.tnc = tnCalls(config)
 
-        if self.config['main']['use-pg']:
-            self.db = dbPGCalls(config)
+        if db == None:
+            if self.config['main']['use-pg']:
+                self.db = dbPGCalls(config)
+            else:
+                self.db = dbCalls(config)
         else:
-            self.db = dbCalls(config)
+            self.db = db
+
+        self.tnc = tnCalls(config, self.db)
 
         if self.config['other']['etherscan-on']:
-            self.otc = etherscanCalls(config)
+            self.otc = etherscanCalls(config, self.db)
         else:
-            self.otc = otherCalls(config)
+            self.otc = otherCalls(config, self.db)
 
     def checkTX(self, targetAddress = '', sourceAddress = ''):
         result = {'status': '', 'tx': '', 'block': '', 'error': ''}
@@ -112,20 +116,22 @@ class verifier(object):
         if heightTN < 100: total += 100
         elif heightTN > 100: total += 50
 
-        if (self.config["main"]["max"] * 10) > balanceOther > 0: total += 100
-        if (self.config["main"]["max"] * 10) > balanceTN > 0: total += 100
+        #if (self.config["main"]["max"] * 10) > balanceOther > 0: total += 100
+        #if (self.config["main"]["max"] * 10) > balanceTN > 0: total += 100
 
-        if numErrors == 0: total += 100
-        elif numErrors < 10: total += 50
+        #if numErrors == 0: total += 100
+        if numErrors < 10: total += 100
 
         if not connTN or not connOther:
             status = "red"
-        elif total == 700:
+        elif total == 500:
             status = "green"
         else:
             status = "yellow"
         
         result = {
+            "chainName": self.config['main']['name'],
+            "assetID": self.config['tn']['assetId'],
             "status": status,
             "connectionTN": connTN,
             "connectionOther": connOther,

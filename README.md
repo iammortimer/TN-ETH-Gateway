@@ -15,11 +15,11 @@ via pip and run the gateway by
 python3 start.py
 ```
 ## Configuration of the config file
-The config.json file includes all necessary settings that need to be connfigured in order to run a proper gateway:
+The config.json file includes all necessary settings that need to be configured in order to run a proper gateway:
 ```
 {
     "main": {
-        "port": <portnumber to run the webinterface on>,
+        "port": <port number to run the webinterface on>,
         "name": "Tokenname",
         "company": "Gateways Ltd",
         "contact-email": "info@contact.us",
@@ -33,6 +33,13 @@ The config.json file includes all necessary settings that need to be connfigured
         "max": <maximum amount>,
         "index-file": "name of the index.html to use, if left blank index.html will be used",
         "db-location": "directory name if the db file is not in the main directory"
+        "use-pg": <true or false, depending on if you want to use a postGres DB instead of sqlite>
+    },
+    "postgres": {
+        "pguser": "",
+        "pgpswd": "",
+        "pghost": "",
+        "pgport": 5432
     },
     "other": {
         "node": "<the eth node you want to connect to>",
@@ -85,7 +92,7 @@ After starting the gateway, there are also a couple of management interfaces whi
 ```
     /errors: This will show an overview of detected errors during processing of blocks or transferring funds
     /executed: This will show an overview of executed transactions through the gateway
-    /docs: Swagger documentation for API calls
+    /docs: Swagger documentation for included API calls
 ```
 
 # Disclaimer
